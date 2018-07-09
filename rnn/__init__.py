@@ -12,14 +12,12 @@ from utils import *
 base_dir = '../data'
 records_path = base_dir + '/records.csv'
 
-model_save_path = '../models/weights.{epoch:02d-{val_loss:.2f}}.hdf5'
-ck = keras.callbacks.ModelCheckpoint(model_save_path, monitor='loss', verbose=0)
 
 records = pd.read_csv(records_path)
 
 COMP_MAXLEN = 1
 USER_MAXLEN = 1
-EPOCHS = 6
+EPOCHS = 4
 BATCH_SIZE = 32
 
 
@@ -79,7 +77,7 @@ preds = layers.Dense(vocab_comps.vocab_size(), activation='softmax')(merged)
 
 model = Model([user, comp], preds)
 
-model.compile(optimizer='adam', loss=keras.losses.categorical_crossentropy
+model.compile(optimizer=keras.optimizers.Adam(lr=0.006), loss=keras.losses.categorical_crossentropy
               , metrics=['accuracy'])
 
 model.summary()
@@ -94,6 +92,11 @@ train, test = train_test_split(list(load_data(records)), test_size=0.2)
 
 u, x, y = vectorize(train, vocab_comps, vocab_users, COMP_MAXLEN, USER_MAXLEN)
 tu, tx, ty = vectorize(test, vocab_comps, vocab_users, COMP_MAXLEN, USER_MAXLEN)
+
+ck = ModelCheckpoint('../models/weights.{epoch:02d}-{val_loss:.2f}.hdf5', monitor='loss', verbose=0)
+
+model.load_weights('weights.46-0.08.hdf5')
+
 
 print('Training...')
 model.fit([u, x], y,
