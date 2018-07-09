@@ -95,7 +95,7 @@ tu, tx, ty = vectorize(test, vocab_comps, vocab_users, COMP_MAXLEN, USER_MAXLEN)
 
 ck = ModelCheckpoint('../models/weights.{epoch:02d}-{val_loss:.2f}.hdf5', monitor='loss', verbose=0)
 
-model.load_weights('weights.46-0.08.hdf5')
+# model.load_weights('weights.46-0.08.hdf5')
 
 
 print('Training...')
