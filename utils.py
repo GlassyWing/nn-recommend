@@ -1,3 +1,5 @@
+from functools import reduce
+
 import pandas as pd
 import numpy as np
 import random
@@ -30,10 +32,12 @@ def __generate_comp_pairs(comps: pd.DataFrame, num_pairs):
     :param num_pairs: 构件对的数量
     :return:
     """
+    num_pairs = num_pairs // 3
     for i in range(num_pairs):
         comp_id_01 = random.choice(comps['compId'])
-        comp_id_02 = random.choice(comps['compId'])
-        yield (comp_id_01, comp_id_02)
+        for _ in range(random.randint(1, 6)):
+            comp_id_02 = random.choice(comps['compId'])
+            yield (comp_id_01, comp_id_02)
 
 
 def random_generate_records(num_records: int, num_pairs: int, users: pd.DataFrame, comps: pd.DataFrame,
@@ -47,6 +51,10 @@ def random_generate_records(num_records: int, num_pairs: int, users: pd.DataFram
     :param comps: 构件
     :return:
     """
+
+    ratio = reduce(lambda a, b: a + b, range(1, max_freq + 1)) / max_freq
+    num_records = int(num_records / ratio)
+
     comp_pairs = list(__generate_comp_pairs(comps, num_pairs))
 
     records = []
