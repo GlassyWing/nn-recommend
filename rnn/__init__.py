@@ -1,24 +1,10 @@
 import keras
-from keras.preprocessing.sequence import pad_sequences
-from keras.models import Sequential, Model
 from keras import layers
 from keras.layers import recurrent
-from keras.callbacks import ModelCheckpoint
-from sklearn.model_selection import train_test_split
-import pandas as pd
+from keras.models import Model
+from keras.preprocessing.sequence import pad_sequences
 
 from utils import *
-
-base_dir = '../data'
-records_path = base_dir + '/records.csv'
-
-
-records = pd.read_csv(records_path)
-
-COMP_MAXLEN = 1
-USER_MAXLEN = 1
-EPOCHS = 4
-BATCH_SIZE = 32
 
 
 class WordTable:
@@ -32,78 +18,99 @@ class WordTable:
         return len(self.words) + 1
 
 
-def vectorize(data: iter
-              , comp_table: WordTable
-              , user_table: WordTable
-              , comp_maxlen: int
-              , user_maxlen: int):
-    uc = []
-    xc = []
-    yc = []
+class SimpleRNNRecommend:
 
-    for user, comp, followComp in data:
-        u = [user_table.word_indices[user]]
-        x = [comp_table.word_indices[comp]]
-        y = np.zeros(len(comp_table.words) + 1)
-        y[comp_table.word_indices[followComp]] = 1
-        uc.append(u)
-        xc.append(x)
-        yc.append(y)
+    def __init__(self, user_maxlen: int
+                 , comp_maxlen: int
+                 , embed_hidden_size: int
+                 , vocab_users: WordTable
+                 , vocab_comps: WordTable):
+        self.user_maxlen = user_maxlen
+        self.comp_maxlen = comp_maxlen
+        self.embed_hidden_size = embed_hidden_size
+        self.vocab_users = vocab_users
+        self.vocab_comps = vocab_comps
+        self.model = self.build_model(vocab_users, vocab_comps)
 
-    return pad_sequences(uc, maxlen=user_maxlen), pad_sequences(xc, maxlen=comp_maxlen), np.array(yc)
+    def build_model(self, vocab_users: WordTable, vocab_comps: WordTable):
+        RNN = recurrent.LSTM
 
+        USER_MAXLEN = self.user_maxlen
+        COMP_MAXLEN = self.comp_maxlen
+        EMBED_HIDDEN_SIZE = self.embed_hidden_size
 
-vocab_comps = WordTable(pd.concat([records['compId'], records['followCompId']], ignore_index=True))
-vocab_users = WordTable(records['userId'])
+        user = layers.Input(shape=(USER_MAXLEN,), dtype=np.float32)
+        encoded_user = layers.Embedding(vocab_users.vocab_size(), EMBED_HIDDEN_SIZE)(user)
+        encoded_user = layers.Dropout(0.3)(encoded_user)
 
-RNN = recurrent.LSTM
-EMBED_HIDDEN_SIZE = 50
+        comp = layers.Input(shape=(COMP_MAXLEN,), dtype=np.float32)
+        encoded_comp = layers.Embedding(vocab_comps.vocab_size(), EMBED_HIDDEN_SIZE)(comp)
+        encoded_comp = layers.Dropout(0.3)(encoded_comp)
+        encoded_comp = RNN(EMBED_HIDDEN_SIZE)(encoded_comp)
+        encoded_comp = layers.RepeatVector(USER_MAXLEN)(encoded_comp)
 
-user = layers.Input(shape=(USER_MAXLEN,), dtype=np.float32)
-encoded_user = layers.Embedding(vocab_users.vocab_size(), EMBED_HIDDEN_SIZE)(user)
-encoded_user = layers.Dropout(0.3)(encoded_user)
+        merged = layers.add([encoded_user, encoded_comp])
+        merged = RNN(EMBED_HIDDEN_SIZE)(merged)
+        merged = layers.Dropout(0.3)(merged)
 
-comp = layers.Input(shape=(COMP_MAXLEN,), dtype=np.float32)
-encoded_comp = layers.Embedding(vocab_comps.vocab_size(), EMBED_HIDDEN_SIZE)(comp)
-encoded_comp = layers.Dropout(0.3)(encoded_comp)
-encoded_comp = RNN(EMBED_HIDDEN_SIZE)(encoded_comp)
-encoded_comp = layers.RepeatVector(USER_MAXLEN)(encoded_comp)
+        preds = layers.Dense(vocab_comps.vocab_size(), activation='softmax')(merged)
 
-merged = layers.add([encoded_user, encoded_comp])
-merged = RNN(EMBED_HIDDEN_SIZE)(merged)
-merged = layers.Dropout(0.3)(merged)
+        model = Model([user, comp], preds)
 
-preds = layers.Dense(vocab_comps.vocab_size(), activation='softmax')(merged)
+        model.compile(optimizer=keras.optimizers.Adam(lr=0.006), loss=keras.losses.categorical_crossentropy
+                      , metrics=['accuracy'])
 
-model = Model([user, comp], preds)
+        return model
 
-model.compile(optimizer=keras.optimizers.Adam(lr=0.006), loss=keras.losses.categorical_crossentropy
-              , metrics=['accuracy'])
+    @staticmethod
+    def load_data(records: pd.DataFrame):
+        for i, row in records.iterrows():
+            yield (row['userId'], row['compId'], row['followCompId'])
 
-model.summary()
+    @staticmethod
+    def vectorize(data: iter
+                  , comp_table: WordTable
+                  , user_table: WordTable
+                  , comp_maxlen: int
+                  , user_maxlen: int):
+        uc = []
+        xc = []
+        yc = []
 
+        for user, comp, followComp in data:
+            u = [user_table.word_indices[user]]
+            x = [comp_table.word_indices[comp]]
+            y = np.zeros(len(comp_table.words) + 1)
+            y[comp_table.word_indices[followComp]] = 1
+            uc.append(u)
+            xc.append(x)
+            yc.append(y)
 
-def load_data(records):
-    for i, row in records.iterrows():
-        yield (row['userId'], row['compId'], row['followCompId'])
+        return pad_sequences(uc, maxlen=user_maxlen), pad_sequences(xc, maxlen=comp_maxlen), np.array(yc)
 
+    def train(self, trains: pd.DataFrame, callbacks=None, epochs=1, batch_size=32):
 
-train, test = train_test_split(list(load_data(records)), test_size=0.2)
+        trains = list(self.load_data(trains))
 
-u, x, y = vectorize(train, vocab_comps, vocab_users, COMP_MAXLEN, USER_MAXLEN)
-tu, tx, ty = vectorize(test, vocab_comps, vocab_users, COMP_MAXLEN, USER_MAXLEN)
+        u, x, y = self.vectorize(trains, self.vocab_comps, self.vocab_users, self.comp_maxlen, self.user_maxlen)
 
-ck = ModelCheckpoint('../models/weights.{epoch:02d}-{val_loss:.2f}.hdf5', monitor='loss', verbose=0)
+        self.model.fit([u, x], y, callbacks=callbacks, batch_size=batch_size, validation_split=0.05, epochs=epochs)
 
-# model.load_weights('weights.46-0.08.hdf5')
+    def evaluate(self, tests: pd.DataFrame, batch_size=32):
 
+        tests = list(self.load_data(tests))
 
-print('Training...')
-model.fit([u, x], y,
-          epochs=EPOCHS,
-          validation_split=0.05, callbacks=[ck])
+        tu, tx, ty = self.vectorize(tests, self.vocab_comps, self.vocab_users, self.comp_maxlen, self.user_maxlen)
 
-loss, acc = model.evaluate([tu, tx], ty,
-                           batch_size=BATCH_SIZE)
+        return self.model.evaluate([tu, tx], ty, batch_size=batch_size)
 
-print('Test loss / test accuracy = {:.4f} / {:.4f}'.format(loss, acc))
+    def save_weights(self, save_path):
+        self.model.save_weights(save_path)
+
+    def load_weights(self, weights_path):
+        self.model.load_weights(weights_path)
+
+    def predict(self, user: int, comp: int, vocab_users: WordTable, vocab_comps: WordTable):
+        u = pad_sequences([[vocab_users.word_indices[user]]])
+        x = pad_sequences([[vocab_comps.word_indices[comp]]])
+        return self.model.predict([u, x])
