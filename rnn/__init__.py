@@ -24,12 +24,14 @@ class SimpleRNNRecommend:
                  , comp_maxlen: int
                  , embed_hidden_size: int
                  , vocab_users: WordTable
-                 , vocab_comps: WordTable):
+                 , vocab_comps: WordTable
+                 , lr=0.006):
         self.user_maxlen = user_maxlen
         self.comp_maxlen = comp_maxlen
         self.embed_hidden_size = embed_hidden_size
         self.vocab_users = vocab_users
         self.vocab_comps = vocab_comps
+        self.lr = lr
         self.model = self.build_model(vocab_users, vocab_comps)
 
     def build_model(self, vocab_users: WordTable, vocab_comps: WordTable):
@@ -57,7 +59,7 @@ class SimpleRNNRecommend:
 
         model = Model([user, comp], preds)
 
-        model.compile(optimizer=keras.optimizers.Adam(lr=0.006), loss=keras.losses.categorical_crossentropy
+        model.compile(optimizer=keras.optimizers.Adam(lr=self.lr), loss=keras.losses.categorical_crossentropy
                       , metrics=['accuracy'])
 
         return model
@@ -104,13 +106,49 @@ class SimpleRNNRecommend:
 
         return self.model.evaluate([tu, tx], ty, batch_size=batch_size)
 
-    def save_weights(self, save_path):
+    def __save_weights(self, save_path):
         self.model.save_weights(save_path)
 
-    def load_weights(self, weights_path):
+    def __save_vocab(self, vocab_dir):
+        import pickle
+        import os
+
+        vocab_comps_path = os.path.join(vocab_dir, 'vocab_comps.vc')
+        vocab_users_path = os.path.join(vocab_dir, 'vocab_users.vc')
+        f = open(vocab_comps_path, 'wb')
+        pickle.dump(self.vocab_comps, f)
+        f.close()
+        f = open(vocab_users_path, 'wb')
+        pickle.dump(self.vocab_users, f)
+        f.close()
+
+    def __load_vocab(self, vocab_dir):
+        import pickle
+        import os
+
+        vocab_comps_path = os.path.join(vocab_dir, 'vocab_comps.vc')
+        vocab_users_path = os.path.join(vocab_dir, 'vocab_users.vc')
+
+        f = open(vocab_comps_path, 'rb')
+        self.vocab_comps = pickle.load(f)
+        f.close()
+        f = open(vocab_users_path, 'rb')
+        self.vocab_users = pickle.load(f)
+        f.close()
+
+    def __load_weights(self, weights_path):
         self.model.load_weights(weights_path)
 
-    def predict(self, user: int, comp: int, vocab_users: WordTable, vocab_comps: WordTable):
-        u = pad_sequences([[vocab_users.word_indices[user]]])
-        x = pad_sequences([[vocab_comps.word_indices[comp]]])
+    def save_model(self, weights_path, vocab_dir):
+        self.__save_weights(weights_path)
+        self.__save_vocab(vocab_dir)
+
+    def load_model(self, weights_path, vocab_dir):
+        self.__load_vocab(vocab_dir)
+        self.model = self.build_model(self.vocab_users, self.vocab_comps)
+        self.__load_weights(weights_path)
+
+    def predict(self, user: int, comp: int):
+        u = pad_sequences([[self.vocab_users.word_indices[user]]])
+        x = pad_sequences([[self.vocab_comps.word_indices[comp]]])
         return self.model.predict([u, x])
