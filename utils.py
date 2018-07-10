@@ -58,7 +58,7 @@ def random_generate_records(num_records: int, num_pairs: int, users: pd.DataFram
         for _ in range(freq):
             records.append((user_id, comp_pair[0], comp_pair[1]))
 
-    return pd.DataFrame(records, columns=['userId', 'compId', 'followCompId']).sample(frac=1).reset_index(drop=True)
+    return pd.DataFrame(records, columns=['userId', 'compId', 'followCompId']).sort_values(by=['userId', 'compId'])
 
 
 def decode_records(records: pd.DataFrame, comps: pd.DataFrame) -> pd.DataFrame:
