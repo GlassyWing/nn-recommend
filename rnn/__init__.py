@@ -43,17 +43,16 @@ class SimpleRNNRecommend:
 
         user = layers.Input(shape=(USER_MAXLEN,), dtype=np.float32)
         encoded_user = layers.Embedding(vocab_users.vocab_size(), EMBED_HIDDEN_SIZE)(user)
-        encoded_user = layers.Dropout(0.3)(encoded_user)
+        # 罚重用户上下文对其产生的影响，使推荐结果更有可能推荐其他用户使用的构件
+        encoded_user = layers.Dropout(0.85)(encoded_user)
 
         comp = layers.Input(shape=(COMP_MAXLEN,), dtype=np.float32)
         encoded_comp = layers.Embedding(vocab_comps.vocab_size(), EMBED_HIDDEN_SIZE)(comp)
-        encoded_comp = layers.Dropout(0.3)(encoded_comp)
         encoded_comp = RNN(EMBED_HIDDEN_SIZE)(encoded_comp)
         encoded_comp = layers.RepeatVector(USER_MAXLEN)(encoded_comp)
 
         merged = layers.add([encoded_user, encoded_comp])
         merged = RNN(EMBED_HIDDEN_SIZE)(merged)
-        merged = layers.Dropout(0.3)(merged)
 
         preds = layers.Dense(vocab_comps.vocab_size(), activation='softmax')(merged)
 
