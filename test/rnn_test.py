@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint, EarlyStopping
 
 from decode import *
 from utils import *
@@ -10,7 +10,7 @@ import pandas as pd
 USER_MAXLEN = 1
 COMP_MAXLEN = 1
 EMBED_HIDDEN_UNITS = 50
-EPOCHS = 30
+EPOCHS = 15
 BATCH_SIZE = 32
 
 base_dir = '../data'
@@ -44,12 +44,13 @@ class RNNTest(TestCase):
 
     def test_model_train(self):
         """
-        训练模型，迭代30次，并将权重保存到文件中
+        训练模型，迭代EPOCHS次，并将权重保存到文件中
         :return:
         """
         ck = ModelCheckpoint('../models/weights.{epoch:02d}-{val_loss:.2f}.hdf5', monitor='loss', verbose=0)
+        es = EarlyStopping(monitor='acc', min_delta=0.05, patience=5, mode='max')
 
-        self.model.train(trains, callbacks=[ck], batch_size=BATCH_SIZE, epochs=EPOCHS)
+        self.model.train(trains, callbacks=[ck, es], batch_size=BATCH_SIZE, epochs=EPOCHS)
 
         loss, acc = self.model.evaluate(tests)
 
@@ -88,6 +89,6 @@ class RNNTest(TestCase):
         print("Predict cost {} s".format(end - start))
 
         # 将概率分布转换为可读的表示
-        for next_comp_id, possibility in next_comps(preds, 0.06, vocab_comps):
+        for next_comp_id, possibility in next_comps(preds, 0.01, vocab_comps):
             next_comp = comps[comps['compId'] == next_comp_id]['name'].values[0]
             print("Next comp id: {}, name: {}, possibility: {}".format(next_comp_id, next_comp, possibility))
